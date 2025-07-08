@@ -1,0 +1,22 @@
+# 기본 라이브러리
+gradio==4.44.0
+python-dotenv==1.0.0
+openai==1.12.0
+
+# PDF 처리
+docling<2.37.0
+PyPDF2==3.0.1
+pdfplumber>=0.10.0
+
+# 벡터 데이터베이스 및 임베딩
+faiss-cpu==1.7.4
+sentence-transformers>=2.2.0
+numpy>=1.24.0
+
+# 기타 유틸리티
+pathlib2>=2.3.0
+torch>=2.0.0
+transformers>=4.30.0
+
+# 로깅 및 유틸리티
+colorama>=0.4.6 
