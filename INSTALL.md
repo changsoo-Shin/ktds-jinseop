@@ -193,20 +193,17 @@ mvp/
 ├── mvp_main.py              # 메인 애플리케이션 (Gradio 인터페이스)
 ├── config.py                # 환경 변수 및 설정 관리
 ├── logger.py                # 로깅 시스템
-├── prompt.py                # 프롬프트 정의 (Pythonic Prompting)
+├── prompt.py                # 프롬프트 정의 (Prompting)
 ├── vector_store.py          # FAISS 벡터 스토어
 ├── pdf_processor.py         # PDF 처리 모듈 (Docling 활용)
-├── review_agent_simple.py   # 문제 검토 에이전트
-├── simple_txt_parser.py     # 텍스트 파싱 유틸리티
 ├── agents/                  # 에이전트 모듈
 │   ├── __init__.py
 │   ├── base_agent.py        # 기본 에이전트 클래스
 │   └── information_validation_agent.py  # 정보 검증 에이전트
 ├── requirements.txt         # 필요한 라이브러리
-├── startup.sh              # Azure App Service 시작 스크립트
-├── web.config              # Azure 웹 설정 파일
 ├── INSTALL.md              # 설치 가이드
 ├── README.md               # 프로젝트 설명
+├── sample_exam/            # pdf 시험 샘플 폴더
 ├── .env                    # 환경 변수 (사용자 생성)
 ├── faiss_vector_db/        # 벡터 데이터베이스 (자동 생성)
 ├── extracted_questions/    # 추출된 문제 저장소 (자동 생성)
