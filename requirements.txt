@@ -11,7 +11,7 @@ pdfplumber>=0.10.0
 # 벡터 데이터베이스 및 임베딩
 faiss-cpu==1.7.4
 sentence-transformers>=2.2.0
-numpy>=1.24.0
+numpy>=1.24.0,<2.0.0
 
 # 기타 유틸리티
 pathlib2>=2.3.0
