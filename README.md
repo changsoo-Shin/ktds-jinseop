@@ -176,6 +176,7 @@ Azure OpenAI와 RAG를 활용한 **맞춤형 학습 시스템**. 기출문제 PD
 - Python 3.11 이상
 - Azure OpenAI 서비스
 - GPU 지원 (선택사항, 성능 향상)
+- ngrok 계정 (외부 접속용, 선택사항)
 
 ### 🔧 로컬 설치
 ```bash
@@ -190,6 +191,7 @@ source .venv/bin/activate  # Linux/Mac
 
 # 3. 의존성 설치
 pip install -r requirements.txt
+pip install pyngrok  # ngrok 터널링 (선택사항)
 
 # 4. 환경 변수 설정 (.env 파일 생성)
 # env.sample 파일을 .env로 복사하고 실제 값으로 수정
@@ -199,134 +201,77 @@ OPENAI_API_KEY=your_api_key
 AZURE_ENDPOINT=your_endpoint
 DEPLOYMENT_NAME=your_deployment
 
-# 5. 실행
+# 5. ngrok 설정 (외부 접속용, 선택사항)
+ngrok authtoken YOUR_AUTH_TOKEN
+
+# 6. 실행
 python mvp_main.py
 ```
 
 ### 🌐 웹 접속
-- 브라우저에서 `http://localhost:7860` 접속
+- **로컬**: 브라우저에서 `http://localhost:7860` 접속
+- **외부 접속**: ngrok URL 또는 Gradio.live URL 사용
 - Gradio 인터페이스 확인
+
+### 🔗 외부 접속 설정
+
+#### .env 파일 설정 (권장)
+```bash
+# .env 파일 편집
+USE_NGROK=true   # ngrok 사용 (기본값)
+# USE_NGROK=false  # Gradio.live 사용으로 변경시
+PORT=7860        # 포트 설정
+```
+
+#### 환경 변수로 임시 설정
+```bash
+# ngrok 사용 (기본값)
+python mvp_main.py
+
+# Gradio.live 사용
+set USE_NGROK=false  # Windows
+export USE_NGROK=false  # Linux/Mac
+python mvp_main.py
+```
 
 ---
 
-## ☁️ Azure App Service 배포
+## 🔗 외부 접속 옵션
 
-### 🏗️ 배포 아키텍처
-```
-[GitHub Repository] → [Azure App Service] → [Gradio Web App]
-        ↓
-[Azure OpenAI Service] ← [Python 3.11 Runtime] → [FAISS Vector DB]
-        ↓
-[사용자 접속: https://user05-mvp-gradio-app.azurewebsites.net]
-```
-
-### 🔧 Azure CLI 배포 가이드
-
-#### 1. 사전 준비
+### 🎯 ngrok 터널링 (권장)
 ```bash
-# Azure CLI 설치 및 로그인
-az login
-az group list --output table
+# 1. ngrok 계정 생성 (무료)
+# https://dashboard.ngrok.com/signup
+
+# 2. authtoken 설정
+ngrok authtoken YOUR_AUTH_TOKEN
+
+# 3. 실행 (자동 ngrok 터널 생성)
+python mvp_main.py
 ```
 
-#### 2. App Service 리소스 생성
+### 🌐 Gradio.live (대체 옵션)
 ```bash
-# App Service Plan 생성
-az appservice plan create \
-  --name user05-mvp-plan \
-  --resource-group user05-RG \
-  --sku B1 \
-  --is-linux \
-  --location eastus2
+# .env 파일에서 설정
+USE_NGROK=false
 
-# Web App 생성
-az webapp create \
-  --resource-group user05-RG \
-  --plan user05-mvp-plan \
-  --name user05-mvp-gradio-app \
-  --runtime "PYTHON|3.11"
+# 또는 환경 변수로 임시 설정
+set USE_NGROK=false  # Windows
+export USE_NGROK=false  # Linux/Mac
+python mvp_main.py
 ```
 
-#### 3. 배포 설정
-```bash
-# 빌드 설정 활성화
-az webapp config appsettings set \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true
+### 📊 접속 방법 비교
+| 방법 | 안정성 | 속도 | 제한 | 특징 |
+|------|--------|------|------|------|
+| **ngrok** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | 월 40시간 (무료) | 안정적, 고정 도메인 가능 |
+| **Gradio.live** | ⭐⭐⭐ | ⭐⭐⭐ | 일주일 (무료) | 간단 설정, 가끔 불안정 |
+| **로컬** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | 없음 | 가장 빠름, 내부망만 |
 
-# Git 배포 설정
-az webapp deployment source config-local-git \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app
-
-# 배포 자격 증명 설정
-az webapp deployment user set \
-  --user-name user05-deploy \
-  --password Deploy123!
-```
-
-#### 4. Git 배포
-```bash
-# Git 원격 저장소 추가
-git remote add azure https://user05-deploy@user05-mvp-gradio-app.scm.azurewebsites.net/user05-mvp-gradio-app.git
-
-# 배포
-git add .
-git commit -m "Azure App Service deployment configuration"
-git push azure main:master
-```
-
-#### 5. 런타임 및 환경 설정
-```bash
-# Python 런타임 설정
-az webapp config set \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --linux-fx-version "PYTHON|3.11"
-
-# Startup 명령 설정
-az webapp config set \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --startup-file "python mvp_main.py"
-
-# 포트 및 환경 변수 설정
-az webapp config appsettings set \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --settings \
-    PORT=8000 \
-    DEPLOYMENT_BRANCH=main \
-    OPENAI_API_KEY="your_azure_openai_api_key" \
-    AZURE_ENDPOINT="https://your-resource.openai.azure.com/" \
-    DEPLOYMENT_NAME="your_deployment_name"
-```
-
-#### 6. 모니터링 및 로그
-```bash
-# 로그 설정
-az webapp log config \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --application-logging filesystem \
-  --level verbose
-
-# 앱 재시작 및 상태 확인
-az webapp restart --resource-group user05-RG --name user05-mvp-gradio-app
-az webapp show --resource-group user05-RG --name user05-mvp-gradio-app --query "state"
-
-# 실시간 로그 확인
-az webapp log tail --resource-group user05-RG --name user05-mvp-gradio-app
-```
-
-### 🌍 배포 결과
-- **앱 이름**: user05-mvp-gradio-app
-- **URL**: https://user05-mvp-gradio-app.azurewebsites.net
-- **상태**: Running
-- **위치**: East US 2
-- **런타임**: Python 3.11
-- **포트**: 8000
+### 🛠️ 서버 배포 옵션
+- **VPS 서버**: DigitalOcean, AWS EC2, Google Cloud VM
+- **컨테이너**: Docker + 클라우드 플랫폼
+- **무료 호스팅**: Heroku, Railway, Render (제한적)
 
 ---
 

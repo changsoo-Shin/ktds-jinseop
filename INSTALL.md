@@ -37,10 +37,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 또는 개별 설치
-pip install gradio==4.44.0 python-dotenv==1.0.0 openai==1.12.0
+pip install gradio==4.44.0 python-dotenv==1.0.0 openai==1.51.2
 pip install docling<2.37.0 PyPDF2==3.0.1 pdfplumber>=0.10.0
 pip install faiss-cpu==1.7.4 sentence-transformers>=2.2.0 numpy>=1.24.0
 pip install torch>=2.0.0 transformers>=4.30.0 colorama>=0.4.6
+pip install pyngrok>=7.0.0  # ngrok 터널링 (선택사항)
+pip install pandas>=1.5.0 pillow>=9.5.0 tqdm>=4.65.0  # 추가 유틸리티
 ```
 
 ## 3. Azure OpenAI 설정
@@ -79,139 +81,72 @@ python mvp_main.py
 - 브라우저에서 `http://localhost:7860` 접속
 - Gradio 인터페이스 확인
 
-## 5. Azure App Service 배포
+## 5. 외부 접속 설정 (ngrok)
 
-### 5.1 Azure CLI 설치 및 로그인
+### 5.1 ngrok 설치
 ```bash
-# Azure CLI 설치 (Windows)
-# https://docs.microsoft.com/en-us/cli/azure/install-azure-cli-windows
+# Python 패키지로 설치 (권장)
+pip install pyngrok
 
-# Azure 로그인
-az login
-
-# 리소스 그룹 확인
-az group list --output table
+# 또는 실행파일 다운로드
+# https://ngrok.com/download 에서 Windows용 다운로드
+# 압축 해제 후 PATH에 추가
 ```
 
-### 5.2 App Service Plan 생성
+### 5.2 ngrok 계정 생성 및 설정
 ```bash
-# App Service Plan 생성 (Linux B1 SKU)
-az appservice plan create \
-  --name user05-mvp-plan \
-  --resource-group user05-RG \
-  --sku B1 \
-  --is-linux \
-  --location eastus2
+# 1. ngrok 계정 생성 (무료)
+# https://dashboard.ngrok.com/signup 접속하여 계정 생성
+
+# 2. authtoken 확인
+# Dashboard에서 authtoken 복사
+
+# 3. authtoken 설정
+ngrok authtoken YOUR_AUTH_TOKEN_HERE
 ```
 
-### 5.3 Web App 생성
+### 5.3 사용 방법
+
+#### 방법 1: .env 파일 설정 (권장)
 ```bash
-# Web App 생성 (Python 3.11 런타임)
-az webapp create \
-  --resource-group user05-RG \
-  --plan user05-mvp-plan \
-  --name user05-mvp-gradio-app \
-  --runtime "PYTHON|3.11"
+# .env 파일에서 설정
+# USE_NGROK=true   # ngrok 사용 (기본값)
+# USE_NGROK=false  # Gradio.live 사용
+# PORT=7860        # 포트 설정 (기본값)
+
+# 기본 실행
+python mvp_main.py
 ```
 
-### 5.4 배포 설정
+#### 방법 2: 환경 변수로 임시 설정
 ```bash
-# 빌드 설정 활성화
-az webapp config appsettings set \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true
+# ngrok 비활성화하고 Gradio.live 사용
+set USE_NGROK=false  # Windows
+export USE_NGROK=false  # Linux/Mac
+python mvp_main.py
 
-# Git 배포 설정
-az webapp deployment source config-local-git \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app
-
-# 배포 자격 증명 설정
-az webapp deployment user set \
-  --user-name user05-deploy \
-  --password Deploy123!
+# 다른 포트 사용
+set PORT=8080  # Windows
+export PORT=8080  # Linux/Mac
+python mvp_main.py
 ```
 
-### 5.5 Git 원격 저장소 추가 및 배포
+#### 방법 3: 별도 터미널에서 ngrok 실행
 ```bash
-# Git 원격 저장소 추가
-git remote add azure https://user05-deploy@user05-mvp-gradio-app.scm.azurewebsites.net/user05-mvp-gradio-app.git
+# .env 파일에서 USE_NGROK=false 설정 후
+# 터미널 1: 앱 실행 (ngrok 없이)
+python mvp_main.py
 
-# 변경사항 커밋
-git add .
-git commit -m "Azure App Service deployment configuration"
-
-# Azure에 배포
-git push azure main:master
+# 터미널 2: ngrok 터널 생성
+ngrok http 7860
 ```
 
-### 5.6 App Service 설정
-```bash
-# Python 런타임 설정
-az webapp config set \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --linux-fx-version "PYTHON|3.11"
-
-# Startup 명령 설정
-az webapp config set \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --startup-file "python mvp_main.py"
-
-# 포트 설정
-az webapp config appsettings set \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --settings PORT=8000
-
-# 배포 브랜치 설정
-az webapp config appsettings set \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --settings DEPLOYMENT_BRANCH=main
-```
-
-### 5.7 로그 설정 및 모니터링
-```bash
-# 로그 설정 활성화
-az webapp log config \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --application-logging filesystem \
-  --level verbose
-
-# 앱 재시작
-az webapp restart \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app
-
-# 상태 확인
-az webapp show \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --query "state"
-
-# 실시간 로그 확인
-az webapp log tail \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app
-```
-
-### 5.8 환경 변수 설정 (Azure)
-```bash
-# Azure OpenAI 환경 변수 설정
-az webapp config appsettings set \
-  --resource-group user05-RG \
-  --name user05-mvp-gradio-app \
-  --settings \
-    OPENAI_API_KEY="your_azure_openai_api_key" \
-    AZURE_ENDPOINT="https://your-resource.openai.azure.com/" \
-    OPENAI_API_TYPE="azure" \
-    OPENAI_API_VERSION="2024-12-01-preview" \
-    DEPLOYMENT_NAME="your_deployment_name"
-```
+### 5.4 ngrok 특징
+- **안정성**: Gradio.live보다 안정적인 터널링
+- **속도**: 빠른 응답 속도
+- **무료 제한**: 월 40시간 (무료 계정)
+- **URL**: 매번 랜덤 URL 생성 (유료: 고정 도메인 가능)
+- **보안**: HTTPS 자동 지원
 
 ## 6. 사용 방법
 
@@ -327,11 +262,11 @@ pip install docling<2.37.0 --no-cache-dir
 - 네트워크 연결 상태 확인
 - DEPLOYMENT_NAME 정확성 확인
 
-### 9.4 Azure App Service 배포 오류
-- Python 런타임 버전 확인 (3.11)
-- PORT 환경 변수 설정 (8000)
-- startup.sh 파일 권한 확인
-- 로그를 통한 오류 진단
+### 9.4 ngrok 연결 오류
+- authtoken 설정 확인
+- 방화벽 및 네트워크 설정 확인
+- 무료 계정 제한 확인 (월 40시간)
+- 대체 옵션: Gradio.live 사용 (USE_NGROK=false)
 
 ### 9.5 PDF 처리 오류
 - PDF 파일 형식 및 크기 확인
@@ -355,10 +290,10 @@ pip install docling<2.37.0 --no-cache-dir
 - 불필요한 데이터 자동 정리
 - 메모리 사용량 모니터링
 
-### 10.4 Azure App Service 최적화
-- App Service Plan 스케일링 (B1 → S1/P1V2)
-- Always On 설정 활성화
-- 로그 레벨 최적화
+### 10.4 외부 접속 최적화
+- ngrok 유료 계정으로 업그레이드 (고정 도메인, 무제한 시간)
+- 방화벽 설정 최적화
+- 네트워크 대역폭 고려
 
 ## 11. 확장 가능성
 
@@ -373,11 +308,11 @@ pip install docling<2.37.0 --no-cache-dir
 - 텍스트 파일 (.txt)
 - 이미지 기반 문서 (OCR)
 
-### 11.3 클라우드 배포 확장
-- Azure Container Apps
-- Azure Functions
-- Azure Kubernetes Service
-- 다중 리전 배포
+### 11.3 배포 옵션 확장
+- Docker 컨테이너화
+- 클라우드 플랫폼 (Heroku, Railway, Render)
+- VPS 서버 배포
+- ngrok 대안 (frp, localtunnel 등)
 
 ### 11.4 AI 모델 확장
 - 다른 LLM 모델 지원 (Claude, Gemini 등)
@@ -387,9 +322,9 @@ pip install docling<2.37.0 --no-cache-dir
 ## 12. 보안 고려사항
 
 ### 12.1 API 키 관리
-- Azure Key Vault 사용 권장
-- 환경 변수를 통한 민감 정보 보호
+- 환경 변수를 통한 민감 정보 보호 (.env 파일)
 - 정기적인 API 키 교체
+- 외부 시크릿 관리 도구 사용 권장
 
 ### 12.2 파일 업로드 보안
 - PDF 파일 형식 검증
@@ -397,6 +332,6 @@ pip install docling<2.37.0 --no-cache-dir
 - 악성 파일 스캔
 
 ### 12.3 데이터 보호
-- 업로드된 PDF 암호화 저장
-- 사용자 데이터 익명화
-- GDPR 준수 고려 
+- 업로드된 PDF 로컬 저장 (암호화 권장)
+- 개인정보 포함 문서 주의
+- 데이터 백업 및 복원 계획 수립 

@@ -1,18 +1,37 @@
+# Standard library imports
 import gradio as gr
 import os
-from dotenv import load_dotenv
-import openai
-from typing import List, Dict, Any, Optional
 import json
 import random
 import tempfile
+import logging
+import time
+import uuid
+import hashlib
+import re
+import traceback
 from pathlib import Path
 from datetime import datetime
-import logging
+from typing import List, Dict, Any, Optional
 
-# 설정 및 로깅 import
+# Third-party imports
+from dotenv import load_dotenv
+import openai
+
+# Optional imports (handled with try-except)
+try:
+    from pyngrok import ngrok
+    NGROK_AVAILABLE = True
+except ImportError:
+    NGROK_AVAILABLE = False
+
+# Local module imports
 from config import Config
 from logger import UserLogger
+from prompt import ExamPrompts, ChatPrompts, AnalysisPrompts, PDFProcessingPrompts
+from vector_store import vector_store
+from pdf_processor import pdf_processor
+from review_agent_simple import review_agent
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -23,14 +42,6 @@ openai.azure_endpoint = Config.AZURE_ENDPOINT
 openai.api_type = Config.OPENAI_API_TYPE
 openai.api_version = Config.OPENAI_API_VERSION
 DEPLOYMENT_NAME = Config.DEPLOYMENT_NAME
-
-
-
-# 커스텀 모듈 import
-from prompt import ExamPrompts, ChatPrompts, AnalysisPrompts, PDFProcessingPrompts
-from vector_store import vector_store
-from pdf_processor import pdf_processor
-from review_agent_simple import review_agent
 
 class ExamQuestionGenerator:
     def __init__(self):
@@ -61,10 +72,6 @@ class ExamQuestionGenerator:
         self.recent_questions = {}  # {exam_name: [recent_question_numbers]}
         
         # 랜덤 시드 초기화 (매번 다른 시드 사용)
-        import time
-        import os
-        import uuid
-        
         # 완전한 랜덤 시드 생성
         current_time = int(time.time() * 1000000)  # 마이크로초 단위
         process_id = os.getpid()
@@ -198,7 +205,6 @@ class ExamQuestionGenerator:
     
     def calculate_pdf_hash(self, pdf_file) -> str:
         """PDF 파일의 해시값 계산"""
-        import hashlib
         
         try:
             if isinstance(pdf_file, str):
@@ -1062,7 +1068,13 @@ class ExamQuestionGenerator:
                         question_number = metadata.get("question_number", "")
                         if question_number:
                             question_numbers.append(question_number)
-                        unique_sources.add("추출된 기출문제")
+                        
+                        # 추출된 문제도 실제 PDF 파일명 사용
+                        if metadata.get("pdf_source"):
+                            pdf_filename = metadata.get("pdf_source")
+                            unique_sources.add(pdf_filename)
+                        else:
+                            unique_sources.add("추출된 기출문제")  # 파일명이 없는 경우에만 generic 텍스트 사용
                         continue
                     
                     # PDF 소스 정보 추출 (실제 PDF 파일명 사용)
@@ -1415,7 +1427,6 @@ class ExamQuestionGenerator:
     
     def calculate_question_hash(self, question_content: str) -> str:
         """문제 내용의 해시값 계산"""
-        import hashlib
         return hashlib.sha256(question_content.encode('utf-8')).hexdigest()
     
     def add_wrong_answer(self, exam_name: str, question_content: str, correct_answer: str, explanation: str, metadata: Optional[Dict[str, Any]] = None):
@@ -1576,7 +1587,6 @@ class ExamQuestionGenerator:
     
     def _extract_keywords(self, message: str) -> list:
         """메시지에서 핵심 키워드 추출"""
-        import re
         
         # 불용어 목록
         stop_words = {
@@ -1976,8 +1986,8 @@ def create_gradio_interface():
                             logger.info(f"📝 [AI 챗봇] 하이브리드 프롬프트 생성 완료")
                         
                         # Azure OpenAI API 호출
-                        response = openai.ChatCompletion.create(
-                            deployment_id=DEPLOYMENT_NAME,
+                        response = openai.chat.completions.create(
+                            model=str(DEPLOYMENT_NAME),
                             messages=[
                                 {"role": "system", "content": hybrid_prompt},
                                 {"role": "user", "content": message}
@@ -1993,7 +2003,8 @@ def create_gradio_interface():
                             logger.info(f"✅ [AI 챗봇] Azure OpenAI API 응답 수신")
                         
                         if response and response.choices:
-                            assistant_message = response.choices[0].message.content.strip()
+                            content = response.choices[0].message.content
+                            assistant_message = content.strip() if content else "❌ 답변을 생성할 수 없습니다."
                             
                             if debug_logs:
                                 logger.info(f"💬 [AI 챗봇] 생성된 답변: {assistant_message[:100]}...")
@@ -2018,7 +2029,6 @@ def create_gradio_interface():
                         error_msg = f"❌ 오류가 발생했습니다: {e}"
                         logger.error(f"❌ [AI 챗봇] 오류: {e}")
                         logger.error(f"❌ [AI 챗봇] 오류 타입: {type(e)}")
-                        import traceback
                         logger.error(f"❌ [AI 챗봇] 오류 상세: {traceback.format_exc()}")
                         history.append({"role": "user", "content": message})
                         history.append({"role": "assistant", "content": error_msg})
@@ -2367,22 +2377,62 @@ def create_gradio_interface():
 
 if __name__ == "__main__":
     # 로깅 설정
-    import logging
     logging.basicConfig(level=logging.INFO)
     
-    # Azure App Service용 포트 설정
-    import os
-    port = int(os.environ.get("PORT", 7860))
+    # 서버 설정 가져오기
+    server_config = Config.get_server_config()
+    port = server_config["port"]
+    use_ngrok = server_config["use_ngrok"]
     
     logger.info("🎯 [콘솔 로그] 정보시스템감리사 문제 생성 챗봇 시작")
     logger.info("🌐 [콘솔 로그] Gradio 웹 인터페이스 실행 중...")
+    logger.info(f"🔧 [설정] 포트: {port}, ngrok 사용: {use_ngrok}")
     
-    # Azure App Service에서 외부 접속 허용
+    # ngrok 설정
+    ngrok_url = None
+    
+    if use_ngrok:
+        if not NGROK_AVAILABLE:
+            logger.warning("⚠️ [ngrok] pyngrok이 설치되지 않았습니다. pip install pyngrok")
+            logger.info("🔄 Gradio share 모드로 대체 실행...")
+            use_ngrok = False
+        else:
+            try:
+                logger.info("🔗 [ngrok] 터널 생성 중...")
+                ngrok_url = ngrok.connect(port)
+                logger.info(f"🌐 [ngrok] 외부 접속 URL: {ngrok_url}")
+                logger.info("=" * 60)
+                logger.info(f"✅ 외부에서 이 URL로 접속하세요: {ngrok_url}")
+                logger.info("=" * 60)
+            except Exception as e:
+                logger.warning(f"⚠️ [ngrok] 연결 실패: {e}")
+                logger.info("🔄 Gradio share 모드로 대체 실행...")
+                use_ngrok = False
+    
+    # Gradio 인터페이스 실행
     demo = create_gradio_interface()
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=port,
-        share=False,
-        show_error=True,
-        debug=False
-    )
+    
+    try:
+        demo.launch(
+            server_name="0.0.0.0",
+            server_port=port,
+            share=not use_ngrok,  # ngrok 사용시 share=False, 실패시 share=True
+            show_error=True,
+            debug=False
+        )
+    except KeyboardInterrupt:
+        logger.info("🛑 [종료] 사용자에 의해 종료되었습니다.")
+        if use_ngrok and ngrok_url:
+            try:
+                ngrok.disconnect(ngrok_url)
+                logger.info("🔗 [ngrok] 터널 연결 해제 완료")
+            except:
+                pass
+    except Exception as e:
+        logger.error(f"❌ [오류] 실행 중 오류 발생: {e}")
+        if use_ngrok and ngrok_url:
+            try:
+                ngrok.disconnect(ngrok_url)
+                logger.info("🔗 [ngrok] 터널 연결 해제 완료")
+            except:
+                pass

@@ -944,13 +944,17 @@ class PDFProcessor:
             results = []
             for result in top_results:
                 question_data = result["question"]
+                
+                # 실제 PDF 파일명 사용 (source_file이 있으면 그대로 사용, 없으면 "추출된 기출문제")
+                pdf_source = question_data.get("source_file", "추출된 기출문제")
+                
                 results.append({
                     "content": question_data["text"],
                     "metadata": {
                         "type": "extracted_question",
                         "subject": subject,
                         "question_number": question_data["number"],
-                        "pdf_source": "추출된 기출문제",
+                        "pdf_source": pdf_source,
                         "score": result["score"],
                         "rank": result["rank"]
                     },

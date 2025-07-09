@@ -227,22 +227,45 @@ class ExamPrompts:
         """
     
     @staticmethod
-    def get_rag_answer_evaluation_prompt(question: str, user_answer: str, context: str, metadata: list = []) -> str:
+    def get_rag_answer_evaluation_prompt(question: str, user_answer: str, context: str, metadata: list = None) -> str:
         """RAG 기반 답변 평가 프롬프트"""
         # 출처 정보 구성
         source_info = ""
+        if metadata is None:
+            metadata = []
         if metadata:
             sources = []
+            question_numbers = []
+            
             for meta in metadata:
                 if meta.get("pdf_source"):
+                    # 실제 PDF 파일명 사용
                     sources.append(meta.get("pdf_source"))
+                    
+                    # 문제 번호가 있으면 추가
+                    if meta.get("question_number"):
+                        question_numbers.append(str(meta.get("question_number")))
                 elif meta.get("type") == "extracted_question":
-                    sources.append("추출된 기출문제")
+                    # 추출된 문제도 실제 PDF 파일명이 있으면 사용
+                    if meta.get("pdf_source"):
+                        sources.append(meta.get("pdf_source"))
+                        if meta.get("question_number"):
+                            question_numbers.append(str(meta.get("question_number")))
+                    else:
+                        sources.append("추출된 기출문제")  # 파일명이 없는 경우에만 generic 텍스트 사용
             
             if sources:
                 unique_sources = list(set(sources))
+                unique_questions = list(set(question_numbers))
+                
                 if len(unique_sources) == 1:
-                    source_info = f"{unique_sources[0]}"
+                    source_info = unique_sources[0]
+                    if unique_questions:
+                        if len(unique_questions) == 1:
+                            source_info += f", {unique_questions[0]}번 문제"
+                        else:
+                            question_str = ", ".join([f"{q}번" for q in sorted(unique_questions)])
+                            source_info += f", {question_str} 문제"
                 else:
                     source_info = f"{', '.join(unique_sources)}"
         

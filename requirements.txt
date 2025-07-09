@@ -1,7 +1,7 @@
 # 기본 라이브러리
 gradio==4.44.0
 python-dotenv==1.0.0
-openai==1.12.0
+openai==1.51.2
 
 # PDF 처리
 docling<2.37.0
@@ -13,10 +13,23 @@ faiss-cpu==1.7.4
 sentence-transformers>=2.2.0
 numpy>=1.24.0,<2.0.0
 
-# 기타 유틸리티
-pathlib2>=2.3.0
+# 머신러닝 및 딥러닝
 torch>=2.0.0
 transformers>=4.30.0
+scikit-learn>=1.3.0
 
-# 로깅 및 유틸리티
-colorama>=0.4.6 
+# 웹 및 HTTP
+httpx>=0.24.0
+requests>=2.31.0
+
+# 데이터 처리
+pandas>=1.5.0
+pillow>=9.5.0
+
+# 유틸리티
+pathlib2>=2.3.0
+colorama>=0.4.6
+tqdm>=4.65.0
+
+# 외부 접속 (선택사항)
+pyngrok>=7.0.0 
