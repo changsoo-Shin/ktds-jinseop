@@ -2109,7 +2109,8 @@ def create_gradio_interface():
                         qtext += source_info
                     
                     progress = f"**{1}/{len(wrongs)}**"
-                    stats = f"📝 총 오답 문제: {len(wrongs)}개\n🔄 총 오답 횟수: {sum(w["wrong_count"] for w in wrongs)}회"
+                    total_wrong_count = sum(w["wrong_count"] for w in wrongs)
+                    stats = f"📝 총 오답 문제: {len(wrongs)}개\n🔄 총 오답 횟수: {total_wrong_count}회"
                     logger.info(f"✅ [오답노트] 첫 번째 오답 문제 로드 완료")
                     return {"list": wrongs, "idx": 0}, qtext, progress, "", stats
 
