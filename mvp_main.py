@@ -31,7 +31,7 @@ from logger import UserLogger
 from prompt import ExamPrompts, ChatPrompts, AnalysisPrompts, PDFProcessingPrompts
 from vector_store import vector_store
 from pdf_processor import pdf_processor
-from review_agent_simple import review_agent
+# from review_agent_simple import review_agent  # 임시 비활성화
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -801,37 +801,38 @@ class ExamQuestionGenerator:
                 # 결과를 파싱하여 저장
                 self._parse_question_result(result)
                 
-                # Review Agent로 문제 검토
-                print("🔍 [콘솔 로그] 문제 검토 시작...")
-                review_result = review_agent.review_question(
-                    question=self.current_question or "",
-                    answer=self.current_answer or "",
-                    explanation=self.current_explanation or "",
-                    exam_name=exam_name
-                )
+                # Review Agent로 문제 검토 (임시 비활성화)
+                # print("🔍 [콘솔 로그] 문제 검토 시작...")
+                # review_result = review_agent.review_question(
+                #     question=self.current_question or "",
+                #     answer=self.current_answer or "",
+                #     explanation=self.current_explanation or "",
+                #     exam_name=exam_name
+                # )
                 
-                # 검토 결과에 따른 처리
-                if not review_result.get("is_valid", False) and review_result.get("suggestions"):
-                    print("⚠️ [콘솔 로그] 문제 검토에서 개선점 발견, 수정 적용 중...")
+                # # 검토 결과에 따른 처리
+                # if not review_result.get("is_valid", False) and review_result.get("suggestions"):
+                #     print("⚠️ [콘솔 로그] 문제 검토에서 개선점 발견, 수정 적용 중...")
                     
-                    # 수정 제안 적용
-                    corrected_result = review_agent.apply_corrections(
-                        question=self.current_question or "",
-                        answer=self.current_answer or "",
-                        explanation=self.current_explanation or "",
-                        suggestions=review_result["suggestions"]
-                    )
+                #     # 수정 제안 적용
+                #     corrected_result = review_agent.apply_corrections(
+                #         question=self.current_question or "",
+                #         answer=self.current_answer or "",
+                #         explanation=self.current_explanation or "",
+                #         suggestions=review_result["suggestions"]
+                #     )
                     
-                    if corrected_result:
-                        # 수정된 문제로 업데이트
-                        self.current_question = corrected_result.get("question", self.current_question)
-                        self.current_answer = corrected_result.get("answer", self.current_answer)
-                        self.current_explanation = corrected_result.get("explanation", self.current_explanation)
-                        print("✅ [콘솔 로그] 문제 수정 완료")
-                    else:
-                        print("⚠️ [콘솔 로그] 문제 수정 실패, 원본 문제 사용")
-                else:
-                    print(f"✅ [콘솔 로그] 문제 검토 통과 (점수: {review_result.get('score', 0)})")
+                #     if corrected_result:
+                #         # 수정된 문제로 업데이트
+                #         self.current_question = corrected_result.get("question", self.current_question)
+                #         self.current_answer = corrected_result.get("answer", self.current_answer)
+                #         self.current_explanation = corrected_result.get("explanation", self.current_explanation)
+                #         print("✅ [콘솔 로그] 문제 수정 완료")
+                #     else:
+                #         print("⚠️ [콘솔 로그] 문제 수정 실패, 원본 문제 사용")
+                # else:
+                #     print(f"✅ [콘솔 로그] 문제 검토 통과 (점수: {review_result.get('score', 0)})")
+                print("🔍 [콘솔 로그] 문제 검토 건너뛰기 (review_agent 비활성화)")
                 
                 question_only = self._get_question_only(self.current_question or result)
                 print("✅ [콘솔 로그] 문제 생성 완료")
