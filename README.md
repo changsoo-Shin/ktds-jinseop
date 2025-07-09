@@ -1,5 +1,7 @@
 # 🎯 기출문제 RAG 기반 시험 문제 생성 및 질의 응답 챗봇
 
+## 발표 주소(https://2ddb49f37426e37fe5.gradio.live/)
+
 ## 📋 프로젝트 개요
 
 Azure OpenAI와 RAG를 활용한 **맞춤형 학습 시스템**. 기출문제 PDF를 업로드하면 벡터 데이터베이스에 저장하고, 이를 기반으로 새로운 문제를 생성하거나 기출문제를 그대로 출제할 수 있습니다.
@@ -82,7 +84,7 @@ Azure OpenAI와 RAG를 활용한 **맞춤형 학습 시스템**. 기출문제 PD
 
 #### 핵심 기술
 - **Azure OpenAI**: GPT-4 기반 자연어 처리
-- **Gradio**: 직관적인 웹 인터페이스 (포트 7860/8000)
+- **Gradio**: 직관적인 웹 인터페이스
 - **FAISS**: 고성능 벡터 데이터베이스 (CPU 버전)
 - **Sentence Transformers**: 다국어 텍스트 임베딩 (paraphrase-multilingual-MiniLM-L12-v2)
 - **Docling**: 고품질 PDF 텍스트 추출 및 문제 파싱
@@ -122,7 +124,7 @@ Azure OpenAI와 RAG를 활용한 **맞춤형 학습 시스템**. 기출문제 PD
 
 ## 🔬 기술적 특징
 
-### 🧠 고급 프롬프팅 (Pythonic Prompting)
+### 🧠 프롬프팅 (Prompting)
 - **모듈화된 프롬프트**: 기능별 프롬프트 분리 및 재사용
 - **동적 프롬프트 생성**: 컨텍스트에 따른 프롬프트 최적화
 - **품질 관리**: 프롬프트 기반 결과 검증
@@ -132,7 +134,6 @@ Azure OpenAI와 RAG를 활용한 **맞춤형 학습 시스템**. 기출문제 PD
 - **정보 검증 에이전트**: 답변 품질 자동 검증
 - **문제 검토 에이전트**: 생성된 문제의 적절성 검토
 - **확장 가능한 구조**: 새로운 에이전트 쉽게 추가 가능
-- **품질 보증**: 다단계 검증을 통한 높은 품질 보장
 
 ### 📊 데이터 관리
 - **벡터 데이터베이스**: FAISS 기반 고성능 검색
@@ -153,8 +154,7 @@ Azure OpenAI와 RAG를 활용한 **맞춤형 학습 시스템**. 기출문제 PD
 ### 💾 메모리 효율성
 - **청크 기반 처리**: 대용량 PDF 청크 단위 처리
 - **자동 정리**: 불필요한 데이터 자동 제거
-- **메모리 모니터링**: 실시간 메모리 사용량 추적
-- **그림 필터링**: 그림 포함 문제 자동 필터링으로 성능 향상
+- **그림 필터링**: 그림 및 도표 포함 문제 자동 필터링으로 성능 향상
 
 ### 🎯 정확도 향상
 - **컨텍스트 검증**: 생성된 컨텍스트 품질 자동 검증
@@ -176,7 +176,6 @@ Azure OpenAI와 RAG를 활용한 **맞춤형 학습 시스템**. 기출문제 PD
 - Python 3.11 이상
 - Azure OpenAI 서비스
 - GPU 지원 (선택사항, 성능 향상)
-- ngrok 계정 (외부 접속용, 선택사항)
 
 ### 🔧 로컬 설치
 ```bash
@@ -191,7 +190,6 @@ source .venv/bin/activate  # Linux/Mac
 
 # 3. 의존성 설치
 pip install -r requirements.txt
-pip install pyngrok  # ngrok 터널링 (선택사항)
 
 # 4. 환경 변수 설정 (.env 파일 생성)
 # env.sample 파일을 .env로 복사하고 실제 값으로 수정
@@ -233,48 +231,7 @@ set USE_NGROK=false  # Windows
 export USE_NGROK=false  # Linux/Mac
 python mvp_main.py
 ```
-
 ---
-
-## 🔗 외부 접속 옵션
-
-### 🎯 ngrok 터널링 (권장)
-```bash
-# 1. ngrok 계정 생성 (무료)
-# https://dashboard.ngrok.com/signup
-
-# 2. authtoken 설정
-ngrok authtoken YOUR_AUTH_TOKEN
-
-# 3. 실행 (자동 ngrok 터널 생성)
-python mvp_main.py
-```
-
-### 🌐 Gradio.live (대체 옵션)
-```bash
-# .env 파일에서 설정
-USE_NGROK=false
-
-# 또는 환경 변수로 임시 설정
-set USE_NGROK=false  # Windows
-export USE_NGROK=false  # Linux/Mac
-python mvp_main.py
-```
-
-### 📊 접속 방법 비교
-| 방법 | 안정성 | 속도 | 제한 | 특징 |
-|------|--------|------|------|------|
-| **ngrok** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | 월 40시간 (무료) | 안정적, 고정 도메인 가능 |
-| **Gradio.live** | ⭐⭐⭐ | ⭐⭐⭐ | 일주일 (무료) | 간단 설정, 가끔 불안정 |
-| **로컬** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | 없음 | 가장 빠름, 내부망만 |
-
-### 🛠️ 서버 배포 옵션
-- **VPS 서버**: DigitalOcean, AWS EC2, Google Cloud VM
-- **컨테이너**: Docker + 클라우드 플랫폼
-- **무료 호스팅**: Heroku, Railway, Render (제한적)
-
----
-
 ## 📁 프로젝트 구조
 
 ```
@@ -282,20 +239,17 @@ mvp/
 ├── mvp_main.py              # 메인 애플리케이션 (Gradio 인터페이스)
 ├── config.py                # 환경 변수 및 설정 관리
 ├── logger.py                # 로깅 시스템
-├── prompt.py                # 프롬프트 정의 (Pythonic Prompting)
+├── prompt.py                # 프롬프트 정의 (Prompting)
 ├── vector_store.py          # FAISS 벡터 스토어
 ├── pdf_processor.py         # PDF 처리 모듈 (Docling 활용)
-├── review_agent_simple.py   # 문제 검토 에이전트
-├── simple_txt_parser.py     # 텍스트 파싱 유틸리티
 ├── agents/                  # 에이전트 모듈
 │   ├── __init__.py
 │   ├── base_agent.py        # 기본 에이전트 클래스
 │   └── information_validation_agent.py  # 정보 검증 에이전트
 ├── requirements.txt         # 필요한 라이브러리
-├── startup.sh              # Azure App Service 시작 스크립트
-├── web.config              # Azure 웹 설정 파일
 ├── INSTALL.md              # 설치 가이드
 ├── README.md               # 프로젝트 설명
+├── sample_exam/            # pdf 시험 샘플 폴더
 ├── .env                    # 환경 변수 (사용자 생성)
 ├── faiss_vector_db/        # 벡터 데이터베이스 (자동 생성)
 ├── extracted_questions/    # 추출된 문제 저장소 (자동 생성)
@@ -309,12 +263,11 @@ mvp/
 
 ## 🎯 핵심 특징
 
-### 🚀 기술적 우수성
-1. **Prompting**: 모듈화된 프롬프트로 재사용성 극대화
-2. **에이전트 기반 검증**: AI 에이전트를 통한 자동 품질 관리
-3. **하이브리드 RAG**: 검색 + 생성 모델의 최적 조합
-4. **GPU 가속**: 전체 파이프라인 GPU 최적화
-5. **다중 시험 관리**: 여러 시험 동시 관리 및 데이터 격리
+### 🚀 적용 기술
+1. **에이전트 기반 검증**: AI 에이전트를 통한 자동 품질 관리
+2. **하이브리드 RAG**: 검색 + 생성 모델의 최적 조합
+3. **GPU 가속**: 전체 파이프라인 GPU 최적화
+4. **다중 시험 관리**: 여러 시험 동시 관리 및 데이터 격리
 
 ### 🔮 확장 가능성
 1. **다중 언어 지원**: 다양한 언어의 기출문제 처리
@@ -336,19 +289,3 @@ mvp/
 3. **문제 번호 패턴**: 1-999 범위의 정확한 문제 번호 추출
 4. **중복 방지**: 해시 기반 PDF 중복 업로드 방지
 5. **완전 삭제**: 시험 제거 시 모든 관련 데이터 완전 삭제
-
----
-
-## 🛠️ 개발 및 운영
-
-### 🔧 개발 환경
-- **Python**: 3.11 이상
-- **IDE**: VS Code, PyCharm 등
-- **Git**: 버전 관리 및 Azure 배포
-- **Azure CLI**: 클라우드 배포 및 관리
-
-### 📊 모니터링
-- **Azure Application Insights**: 성능 모니터링
-- **로그 분석**: 실시간 로그 확인
-- **사용자 분석**: 사용 패턴 분석
-- **오류 추적**: 자동 오류 감지 및 알림
