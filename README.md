@@ -1,6 +1,6 @@
 # 🎯 기출문제 RAG 기반 시험 문제 생성 및 질의 응답 챗봇
 
-## 발표 주소(https://2ddb49f37426e37fe5.gradio.live/)
+## 발표 임시 주소(https://669a252778e1.ngrok-free.app/)
 
 ## 📋 프로젝트 개요
 
