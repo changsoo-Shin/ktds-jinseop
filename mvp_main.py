@@ -60,9 +60,20 @@ class ExamQuestionGenerator:
         self.question_history = {}  # {exam_name: [question_numbers]}
         self.recent_questions = {}  # {exam_name: [recent_question_numbers]}
         
-        # 랜덤 시드 초기화
+        # 랜덤 시드 초기화 (매번 다른 시드 사용)
         import time
-        random.seed(time.time())
+        import os
+        import uuid
+        
+        # 완전한 랜덤 시드 생성
+        current_time = int(time.time() * 1000000)  # 마이크로초 단위
+        process_id = os.getpid()
+        unique_id = int(uuid.uuid4().hex[:8], 16)  # UUID의 일부를 정수로 변환
+        random_offset = random.randint(1, 999999)
+        
+        seed = current_time + process_id + unique_id + random_offset
+        random.seed(seed)
+        logger.info(f"🎲 [초기화] 완전 랜덤 시드 설정: {seed} (시간: {current_time}, PID: {process_id}, UUID: {unique_id}, 오프셋: {random_offset})")
         
         # 시험 데이터 및 PDF 해시 정보 로드
         self._load_exam_data()
@@ -91,30 +102,54 @@ class ExamQuestionGenerator:
         return f"✅ '{exam_name}' 시험이 추가되었습니다.", gr.Dropdown(choices=self.get_exam_list())
     
     def remove_exam(self, exam_name: str) -> tuple[str, gr.Dropdown]:
-        """시험 제거"""
+        """시험 제거 (모든 관련 파일 포함)"""
         if exam_name not in self.exams:
             return f"❌ '{exam_name}' 시험을 찾을 수 없습니다.", gr.Dropdown(choices=self.get_exam_list())
         
-        # 벡터 DB에서 해당 시험 데이터 삭제
         try:
-            vector_store.delete_exam_data(exam_name)
-        except:
-            pass
-        
-        del self.exams[exam_name]
-        self.exam_names.remove(exam_name)
-        
-        # 시험 데이터 저장
-        self._save_exam_data()
-        
-        # PDF 해시도 제거
-        if exam_name in self.pdf_hashes:
-            del self.pdf_hashes[exam_name]
-            # 해시 정보 영구 저장
+            # 1. extracted_questions 폴더에서 관련 파일들 삭제
+            questions_dir = Path("extracted_questions")
+            if questions_dir.exists():
+                for file_path in questions_dir.glob(f"*{exam_name}*"):
+                    try:
+                        file_path.unlink()
+                        logger.info(f"🗑️ 삭제된 파일: {file_path}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 파일 삭제 실패 {file_path}: {e}")
+            
+            # 2. 벡터 DB에서 해당 시험 데이터 삭제
+            try:
+                vector_store.delete_exam_data(exam_name)
+            except Exception as e:
+                logger.warning(f"⚠️ 벡터 DB 삭제 실패: {e}")
+            
+            # 3. 메모리 데이터 삭제
+            del self.exams[exam_name]
+            self.exam_names.remove(exam_name)
+            
+            # 4. PDF 해시도 제거
+            if exam_name in self.pdf_hashes:
+                del self.pdf_hashes[exam_name]
+            
+            # 5. 오답노트도 제거
+            if exam_name in self.wrong_answers:
+                del self.wrong_answers[exam_name]
+            
+            # 6. 문제 히스토리도 제거
+            if exam_name in self.recent_questions:
+                del self.recent_questions[exam_name]
+            
+            # 7. 모든 데이터 파일 저장 (업데이트된 상태로)
+            self._save_exam_data()
             self._save_pdf_hashes()
-        
-        logger.info(f"✅ [콘솔 로그] 시험 제거: {exam_name}")
-        return f"✅ '{exam_name}' 시험이 제거되었습니다.", gr.Dropdown(choices=self.get_exam_list())
+            self._save_wrong_answers()
+            
+            logger.info(f"✅ [콘솔 로그] 시험 완전 제거: {exam_name}")
+            return f"✅ '{exam_name}' 시험이 완전히 제거되었습니다.\n\n🗑️ 삭제된 항목:\n- extracted_questions 폴더의 관련 파일들\n- 벡터 DB 데이터\n- PDF 해시 정보\n- 오답노트 데이터\n- 문제 히스토리", gr.Dropdown(choices=self.get_exam_list())
+            
+        except Exception as e:
+            logger.error(f"❌ 시험 제거 중 오류: {e}")
+            return f"❌ 시험 제거 중 오류가 발생했습니다: {e}", gr.Dropdown(choices=self.get_exam_list())
     
     def get_exam_list(self) -> List[str]:
         """시험 목록 반환"""
@@ -136,6 +171,10 @@ class ExamQuestionGenerator:
         """시험의 PDF 목록을 포맷된 문자열로 반환"""
         logger.debug(f"🔍 [DEBUG] format_pdf_list 호출 - 시험: {exam_name}")
         logger.debug(f"🔍 [DEBUG] 현재 exams 데이터: {self.exams}")
+        
+        # 시험이 존재하지 않는 경우 처리
+        if not exam_name or exam_name not in self.exams:
+            return "❌ 선택된 시험이 존재하지 않습니다. 시험을 다시 선택해주세요."
         
         pdfs = self.get_exam_pdfs(exam_name)
         logger.debug(f"🔍 [DEBUG] 가져온 PDF 목록: {pdfs}")
@@ -421,20 +460,26 @@ class ExamQuestionGenerator:
             print(f"❌ [콘솔 로그] {error_msg}")
             return error_msg
         
-        # 랜덤하게 난이도와 문제 유형 선택 (완전한 랜덤화)
+        # 랜덤하게 난이도와 문제 유형 선택 (매번 다른 랜덤화)
         import time
         import os
         import uuid
         
-        # 완전한 랜덤 시드 생성 (시간 + 프로세스 ID + UUID + 랜덤 값)
+        # 매번 새로운 랜덤 시드 생성 (시간 + 프로세스 ID + UUID + 랜덤 값 + 추가 랜덤)
         current_time = int(time.time() * 1000000)  # 마이크로초 단위
         process_id = os.getpid()
         unique_id = int(uuid.uuid4().hex[:8], 16)  # UUID의 일부를 정수로 변환
         random_offset = random.randint(1, 999999)
+        additional_random = random.randint(1000000, 9999999)  # 추가 랜덤 값
         
-        seed = current_time + process_id + unique_id + random_offset
+        seed = current_time + process_id + unique_id + random_offset + additional_random
         random.seed(seed)
-        logger.info(f"🎲 [문제 생성] 완전 랜덤 시드 설정: {seed} (시간: {current_time}, PID: {process_id}, UUID: {unique_id}, 오프셋: {random_offset})")
+        logger.info(f"🎲 [문제 생성] 매번 새로운 랜덤 시드 설정: {seed} (시간: {current_time}, PID: {process_id}, UUID: {unique_id}, 오프셋: {random_offset}, 추가: {additional_random})")
+        
+        # 난수 생성 테스트
+        test_random1 = random.randint(1, 1000)
+        test_random2 = random.randint(1, 1000)
+        logger.info(f"🎲 [문제 생성] 난수 테스트: {test_random1}, {test_random2}")
         
         difficulty = random.choice(self.difficulties)
         question_type = random.choice(self.question_types)
@@ -470,6 +515,27 @@ class ExamQuestionGenerator:
             all_questions = similar_questions + extracted_questions
             # 점수 기준으로 정렬
             all_questions = sorted(all_questions, key=lambda x: x.get('score', 0), reverse=True)[:5]
+            
+            # 그림 포함 문제 필터링
+            filtered_questions = []
+            for question in all_questions:
+                question_content = question.get("content", "")
+                # 그림 관련 키워드 체크
+                if any(keyword in question_content for keyword in ["그림", "도표", "차트", "이미지", "사진", "화면", "스크린샷"]):
+                    print(f"⚠️ [콘솔 로그] RAG 그림 포함 문제 필터링")
+                    continue
+                filtered_questions.append(question)
+            
+            if not filtered_questions:
+                print(f"⚠️ [콘솔 로그] RAG 필터링 후 문제가 없어 일반 생성으로 전환")
+                prompt = ExamPrompts.get_question_generation_prompt(
+                    exam_name, difficulty, question_type, exam_name
+                )
+                self.current_context = None
+                self.current_metadata = None
+                print("🔄 [콘솔 로그] 일반 문제 생성 중...")
+            
+            all_questions = filtered_questions
             
             if all_questions:
                 # 컨텍스트 구성
@@ -556,9 +622,31 @@ class ExamQuestionGenerator:
                 print(f"❌ [콘솔 로그] {exam_name} 시험의 추출된 문제가 없습니다.")
                 return "❌ 해당 시험의 추출된 기출문제가 없습니다. PDF를 먼저 업로드해주세요."
             
+            # 문제 필터링 (그림 포함 문제 제외) - 완화된 필터링
+            filtered_questions = []
+            for question in extracted_questions:
+                question_text = question.get("text", "")
+                # 그림 관련 키워드 체크 (더 정확한 필터링)
+                # 단순히 "그림"이라는 단어만 있으면 필터링하지 않고, 실제로 그림이 필요한 문제만 필터링
+                if any(keyword in question_text for keyword in ["다음 그림", "위의 그림", "아래 그림", "그림과 같이", "그림에서 보는 바와 같이"]):
+                    print(f"⚠️ [콘솔 로그] 그림 포함 문제 필터링: {question.get('number', 'unknown')}번")
+                    continue
+                filtered_questions.append(question)
+            
+            if not filtered_questions:
+                print(f"❌ [콘솔 로그] 필터링 후 사용 가능한 문제가 없습니다.")
+                return "❌ 그림이 포함되지 않은 문제가 없습니다. 다른 PDF를 업로드해주세요."
+            
+            # 문제가 1개만 있을 때 경고
+            if len(filtered_questions) == 1:
+                print(f"⚠️ [콘솔 로그] 경고: 사용 가능한 문제가 1개만 있습니다. 항상 같은 문제가 출제될 수 있습니다.")
+                print(f"⚠️ [콘솔 로그] 추천: 더 많은 PDF를 업로드하거나 'generate' 모드를 사용하세요.")
+            
+            print(f"✅ [콘솔 로그] 필터링 완료: {len(extracted_questions)}개 → {len(filtered_questions)}개")
+            
             # PDF별로 문제 그룹화
             pdf_questions = {}
-            for question in extracted_questions:
+            for question in filtered_questions:
                 source_file = question.get("source_file", "unknown")
                 if source_file not in pdf_questions:
                     pdf_questions[source_file] = []
@@ -566,19 +654,24 @@ class ExamQuestionGenerator:
             
             logger.info(f"📊 [문제 생성] PDF별 문제 분포: {[(pdf, len(questions)) for pdf, questions in pdf_questions.items()]}")
             
-            # 각 PDF 내에서 문제를 랜덤하게 섞기
+            # 각 PDF 내에서 문제를 랜덤하게 섞기 (매번 다른 순서)
             for pdf_file, questions in pdf_questions.items():
+                # 추가 랜덤화를 위한 시드 재설정
+                shuffle_seed = int(time.time() * 1000000) + random.randint(1, 999999)
+                random.seed(shuffle_seed)
                 random.shuffle(questions)
-                logger.info(f"🎲 [문제 생성] {pdf_file} 문제 섞기 완료: {len(questions)}개")
+                logger.info(f"🎲 [문제 생성] {pdf_file} 문제 섞기 완료: {len(questions)}개 (시드: {shuffle_seed})")
             
             # 모든 PDF의 문제를 하나의 리스트로 합치고 완전히 랜덤하게 섞기
             all_questions = []
             for pdf_file, questions in pdf_questions.items():
                 all_questions.extend(questions)
             
-            # 완전히 랜덤하게 섞기
+            # 완전히 랜덤하게 섞기 (매번 다른 순서)
+            final_shuffle_seed = int(time.time() * 1000000) + random.randint(1, 999999)
+            random.seed(final_shuffle_seed)
             random.shuffle(all_questions)
-            logger.info(f"🎲 [문제 생성] 전체 문제 랜덤 섞기 완료: {len(all_questions)}개 문제")
+            logger.info(f"🎲 [문제 생성] 전체 문제 랜덤 섞기 완료: {len(all_questions)}개 문제 (시드: {final_shuffle_seed})")
             
             # 최근에 출제된 문제 목록 가져오기
             recent_questions = self.recent_questions.get(exam_name, [])
@@ -596,6 +689,14 @@ class ExamQuestionGenerator:
             
             # 사용 가능한 문제가 있으면 랜덤 선택
             if available_questions:
+                logger.info(f"🎲 [문제 생성] 사용 가능한 문제 수: {len(available_questions)}개")
+                logger.info(f"🎲 [문제 생성] 사용 가능한 문제 목록: {[q['number'] for q in available_questions]}")
+                
+                # 랜덤 선택 전 시드 재설정
+                choice_seed = int(time.time() * 1000000) + random.randint(1, 999999)
+                random.seed(choice_seed)
+                logger.info(f"🎲 [문제 생성] 문제 선택용 시드 설정: {choice_seed}")
+                
                 selected_question = random.choice(available_questions)
                 question_number = selected_question["number"]
                 source_file = selected_question.get("source_file", "unknown")
@@ -605,6 +706,15 @@ class ExamQuestionGenerator:
                 # 모든 문제가 최근에 출제되었다면 최근 목록 초기화
                 logger.info(f"🔄 [문제 생성] 모든 문제가 최근에 출제됨, 최근 목록 초기화")
                 self.recent_questions[exam_name] = []
+                
+                logger.info(f"🎲 [문제 생성] 전체 문제 수: {len(all_questions)}개")
+                logger.info(f"🎲 [문제 생성] 전체 문제 목록: {[q['number'] for q in all_questions]}")
+                
+                # 랜덤 선택 전 시드 재설정
+                choice_seed = int(time.time() * 1000000) + random.randint(1, 999999)
+                random.seed(choice_seed)
+                logger.info(f"🎲 [문제 생성] 초기화 후 문제 선택용 시드 설정: {choice_seed}")
+                
                 selected_question = random.choice(all_questions)
                 question_number = selected_question["number"]
                 source_file = selected_question.get("source_file", "unknown")
@@ -1407,6 +1517,63 @@ class ExamQuestionGenerator:
         print(f"✅ {exam_name} 오답 전체 삭제 완료")
         return True
     
+    def clear_all_data(self) -> str:
+        """모든 데이터 완전 초기화"""
+        try:
+            # 1. extracted_questions 폴더 전체 삭제
+            questions_dir = Path("extracted_questions")
+            if questions_dir.exists():
+                for file_path in questions_dir.glob("*"):
+                    try:
+                        file_path.unlink()
+                        logger.info(f"🗑️ 삭제된 파일: {file_path}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 파일 삭제 실패 {file_path}: {e}")
+            
+            # 2. faiss_vector_db 폴더 삭제
+            vector_db_dir = Path("faiss_vector_db")
+            if vector_db_dir.exists():
+                for file_path in vector_db_dir.glob("*"):
+                    try:
+                        file_path.unlink()
+                        logger.info(f"🗑️ 삭제된 벡터 DB 파일: {file_path}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 벡터 DB 파일 삭제 실패 {file_path}: {e}")
+            
+            # 3. 데이터 파일들 삭제
+            data_files = ["exam_data.json", "pdf_hashes.json", "wrong_answers.json"]
+            for file_name in data_files:
+                file_path = Path(file_name)
+                if file_path.exists():
+                    try:
+                        file_path.unlink()
+                        logger.info(f"🗑️ 삭제된 데이터 파일: {file_path}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 데이터 파일 삭제 실패 {file_path}: {e}")
+            
+            # 4. 메모리 데이터 초기화
+            self.exams = {}
+            self.exam_names = []
+            self.pdf_hashes = {}
+            self.wrong_answers = {}
+            self.recent_questions = {}
+            
+            # 5. 벡터 DB 초기화 (메서드가 없으면 무시)
+            try:
+                if hasattr(vector_store, 'clear_all_data'):
+                    vector_store.clear_all_data()
+                else:
+                    logger.info("ℹ️ 벡터 DB clear_all_data 메서드가 없어 건너뜁니다.")
+            except Exception as e:
+                logger.warning(f"⚠️ 벡터 DB 초기화 실패: {e}")
+            
+            logger.info("✅ 모든 데이터 완전 초기화 완료")
+            return "✅ 모든 데이터가 완전히 초기화되었습니다.\n\n🗑️ 삭제된 항목:\n- extracted_questions 폴더 전체\n- faiss_vector_db 폴더 전체\n- exam_data.json\n- pdf_hashes.json\n- wrong_answers.json\n- 메모리 데이터\n- 벡터 DB 데이터"
+            
+        except Exception as e:
+            logger.error(f"❌ 데이터 초기화 중 오류: {e}")
+            return f"❌ 데이터 초기화 중 오류가 발생했습니다: {e}"
+    
     def _extract_keywords(self, message: str) -> list:
         """메시지에서 핵심 키워드 추출"""
         import re
@@ -1501,6 +1668,15 @@ generator = ExamQuestionGenerator()
 def create_gradio_interface():
     """Gradio 인터페이스 생성"""
     
+    # 동기화 함수 정의 (맨 위에 위치)
+    def update_exam_list():
+        """시험 목록 업데이트"""
+        return gr.Dropdown(choices=generator.get_exam_list())
+    
+    def update_selected_exam():
+        """문제 풀이 탭의 시험 선택 업데이트"""
+        return gr.Dropdown(choices=generator.get_exam_list(), value=None)
+    
     with gr.Blocks(title="기출문제 RAG 기반 시험 문제 생성 및 질의 응답 챗봇") as demo:
         gr.Markdown("# 🎯 기출문제 RAG 기반 시험 문제 생성 및 질의 응답 챗봇")
         gr.Markdown("### Azure OpenAI와 RAG를 활용한 맞춤형 학습 시스템")
@@ -1520,6 +1696,9 @@ def create_gradio_interface():
                         with gr.Row():
                             add_exam_btn = gr.Button("시험 추가", variant="primary", size="sm")
                             remove_exam_btn = gr.Button("시험 제거", variant="stop", size="sm")
+                        
+                        with gr.Row():
+                            clear_all_btn = gr.Button("모든 데이터 초기화", variant="stop", size="sm")
                         
                         exam_action_output = gr.Textbox(
                             label="작업 결과",
@@ -1558,31 +1737,6 @@ def create_gradio_interface():
                             lines=8,
                             interactive=False
                         )
-                
-                # 이벤트 연결
-                add_exam_btn.click(
-                    fn=generator.add_exam,
-                    inputs=[exam_name_input],
-                    outputs=[exam_action_output, exam_list]
-                )
-                
-                remove_exam_btn.click(
-                    fn=generator.remove_exam,
-                    inputs=[exam_list],
-                    outputs=[exam_action_output, exam_list]
-                )
-                
-                upload_btn.click(
-                    fn=generator.upload_pdf,
-                    inputs=[pdf_upload, exam_name_input],
-                    outputs=[upload_output, exam_list]
-                )
-                
-                pdf_list_btn.click(
-                    fn=generator.format_pdf_list,
-                    inputs=[exam_list],
-                    outputs=[pdf_list_output]
-                )
             
             # 탭 2: 문제 생성 및 답변
             with gr.TabItem("📝 문제 풀이"):
@@ -1787,198 +1941,67 @@ def create_gradio_interface():
                         top_extracted = sorted(unique_extracted, key=lambda x: x.get('score', 0), reverse=True)[:5]
                         
                         # 벡터 DB 결과와 추출된 문제 결과 합치기
-                        combined_results = similar_chunks + top_extracted
-                        # 점수 기준으로 재정렬
-                        combined_results = sorted(combined_results, key=lambda x: x.get('score', 0), reverse=True)[:ai_config["top_k"]]
+                        combined_context = ""
                         
-                        if debug_logs:
-                            logger.info(f"🔍 [AI 챗봇] 검색 완료 - 벡터 DB: {len(similar_chunks)}개, 추출된 문제: {len(top_extracted)}개")
-                            
-                            # 검색 결과 디버깅 출력 (간소화된 메타데이터)
-                            logger.info(f"🔍 [AI 챗봇] 검색 결과 디버깅 - 총 {len(combined_results)}개 결과:")
-                            for i, chunk in enumerate(combined_results, 1):
-                                score = chunk.get('score', 'N/A')
-                                if isinstance(score, (int, float)):
-                                    score_str = f"{score:.4f}"
-                                else:
-                                    score_str = str(score)
-                                
-                                metadata = chunk.get('metadata', {})
-                                source_type = metadata.get('type', 'vector_db')
-                                simplified_metadata = {
-                                    'type': source_type,
-                                    'subject': metadata.get('subject', 'N/A'),
-                                    'pdf_source': metadata.get('pdf_source', 'N/A'),
-                                    'question_number': metadata.get('question_number', 'N/A')
-                                }
-                                
-                                logger.info(f"  {i}. 점수: {score_str}")
-                                logger.info(f"     타입: {simplified_metadata['type']}")
-                                logger.info(f"     과목: {simplified_metadata['subject']}")
-                                logger.info(f"     PDF: {simplified_metadata['pdf_source']}")
-                                if source_type == 'extracted_question':
-                                    logger.info(f"     문제번호: {simplified_metadata['question_number']}")
-                                logger.info(f"     내용 미리보기: {chunk.get('content', '')[:150]}...")
-                                logger.info(f"     ---")
-                        
-                        # 관련성 점수 분석
-                        best_score = combined_results[0].get('score', 0) if combined_results else 0
-                        if debug_logs:
-                            logger.info(f"🔍 [AI 챗봇] 최고 점수: {best_score}")
-                        
-                        if not combined_results or best_score < ai_config["similarity_threshold"]:
+                        if similar_chunks:
                             if debug_logs:
-                                logger.warning(f"⚠️ [AI 챗봇] 관련성 점수가 낮음 ({best_score}), 하이브리드 답변 모드로 전환")
-                            # 하이브리드 답변: 기출문제 + LLM 지식
-                            response_mode = "hybrid"
-                        else:
+                                logger.info(f"📄 [AI 챗봇] 벡터 DB 검색 결과: {len(similar_chunks)}개")
+                            combined_context += "=== 벡터 DB 검색 결과 ===\n"
+                            for i, chunk in enumerate(similar_chunks, 1):
+                                combined_context += f"{i}. {chunk.get('content', '')}\n\n"
+                        
+                        if top_extracted:
                             if debug_logs:
-                                logger.info(f"✅ [AI 챗봇] 관련성 점수가 높음 ({best_score}), RAG 기반 답변 모드")
-                            response_mode = "rag_only"
+                                logger.info(f"📄 [AI 챗봇] 추출된 문제 검색 결과: {len(top_extracted)}개")
+                            combined_context += "=== 추출된 기출문제 ===\n"
+                            for i, chunk in enumerate(top_extracted, 1):
+                                combined_context += f"{i}. {chunk.get('content', '')}\n\n"
                         
-                        if not combined_results:
-                            error_msg = f"❌ '{exam_name}' 시험의 기출문제에서 관련 내용을 찾을 수 없습니다.\n\n💡 다음을 확인해주세요:\n- 해당 시험에 PDF가 업로드되어 있는지\n- 질문을 더 구체적으로 작성해보세요\n- 다른 키워드로 질문해보세요"
-                            logger.error(f"❌ [AI 챗봇] 관련 기출문제를 찾을 수 없음")
-                            history.append({"role": "user", "content": message})
-                            history.append({"role": "assistant", "content": error_msg})
-                            return history, ""
-                        
-                        # 컨텍스트 구성 (상위 5개만 사용)
-                        if debug_logs:
-                            logger.info(f"📝 [AI 챗봇] 컨텍스트 구성 시작...")
-                        top_chunks = combined_results[:5]  # 상위 5개만 사용
-                        context = "\n\n".join([chunk["content"] for chunk in top_chunks])
-                        if debug_logs:
-                            logger.info(f"✅ [AI 챗봇] 상위 {len(top_chunks)}개 기출문제로 컨텍스트 구성")
-                            logger.info(f"📝 [AI 챗봇] 컨텍스트 길이: {len(context)} 문자")
-                        
-                        # 정보 검증 에이전트로 컨텍스트 검증 (선택적)
-                        if debug_logs:
-                            logger.info(f"🔍 [AI 챗봇] 정보 검증 에이전트로 컨텍스트 검증 시작...")
-                        
-                        # 검증 에이전트 사용 여부 설정
-                        use_validation_agent = Config.USE_VALIDATION_AGENT
-                        
-                        if use_validation_agent:
-                            try:
-                                from agents.information_validation_agent import InformationValidationAgent
-                                validation_agent = InformationValidationAgent()
-                                
-                                # AgentState 생성
-                                from agents.base_agent import AgentState
-                                state = AgentState(
-                                    user_query=message,
-                                    context=context,
-                                    metadata={"chunks": [chunk.get("metadata", {}) for chunk in top_chunks]}
-                                )
-                                
-                                # 검증 실행
-                                validated_state = validation_agent.process(state)
-                                
-                                if validated_state.success:
-                                    # 검증된 컨텍스트 사용
-                                    context = validated_state.context
-                                    validation_info = validated_state.metadata.get("validation", {}) if validated_state.metadata else {}
-                                    
-                                    if debug_logs:
-                                        logger.info(f"✅ [AI 챗봇] 정보 검증 완료")
-                                        logger.info(f"📊 [AI 챗봇] 검증 통계: 원본 {validation_info.get('original_chunks', 0)}개 → 필터링 {validation_info.get('filtered_chunks', 0)}개")
-                                        if validation_info.get('removed_chunks', 0) > 0:
-                                            logger.warning(f"⚠️ [AI 챗봇] {validation_info.get('removed_chunks', 0)}개 청크 제거됨")
-                                            for reason in validation_info.get('validation_reasons', []):
-                                                logger.info(f"📝 [AI 챗봇] 제거 이유: {reason}")
-                                else:
-                                    if debug_logs:
-                                        logger.warning(f"⚠️ [AI 챗봇] 정보 검증 실패: {validated_state.error}")
-                                        logger.info(f"📝 [AI 챗봇] 원본 컨텍스트 사용")
-                            
-                            except Exception as e:
-                                if debug_logs:
-                                    logger.error(f"❌ [AI 챗봇] 정보 검증 에이전트 오류: {e}")
-                                    logger.info(f"📝 [AI 챗봇] 원본 컨텍스트 사용")
-                        else:
+                        if not combined_context:
                             if debug_logs:
-                                logger.info(f"📝 [AI 챗봇] 정보 검증 에이전트 비활성화됨 - 원본 컨텍스트 사용")
-                        
-                        # 답변 모드에 따른 프롬프트 생성
-                        context_str = context or ""
-                        if response_mode == "hybrid":
-                            if debug_logs:
-                                logger.info(f"🔄 [AI 챗봇] 하이브리드 모드 - 기출문제 + LLM 지식 결합")
-                            prompt = generator._create_hybrid_prompt(message, context_str, history, exam_name)
-                            system_prompt = ExamPrompts.get_system_prompts(exam_name)["hybrid_assistant"]
-                        else:
-                            if debug_logs:
-                                logger.info(f"🔄 [AI 챗봇] RAG 전용 모드 - 기출문제 기반 답변")
-                            prompt = ChatPrompts.get_rag_conversation_prompt(message, context_str, history)
-                            system_prompt = ExamPrompts.get_system_prompts(exam_name)["rag_assistant"]
+                                logger.info(f"❌ [AI 챗봇] 검색 결과 없음")
+                            combined_context = "관련 기출문제를 찾을 수 없습니다."
                         
                         if debug_logs:
-                            logger.info(f"🔄 [AI 챗봇] 프롬프트 생성 완료")
-                            logger.info(f"📝 [AI 챗봇] 프롬프트 길이: {len(prompt)} 문자")
-                            logger.info(f"📝 [AI 챗봇] 시스템 프롬프트 길이: {len(system_prompt)} 문자")
+                            logger.info(f"📝 [AI 챗봇] 최종 컨텍스트 길이: {len(combined_context)}자")
+                        
+                        # AI 챗봇 응답 생성
+                        if debug_logs:
+                            logger.info(f"🤖 [AI 챗봇] Azure OpenAI API 호출 시작...")
+                        
+                        # 하이브리드 프롬프트 생성
+                        hybrid_prompt = generator._create_hybrid_prompt(message, combined_context, history, exam_name)
                         
                         if debug_logs:
-                            logger.info("🤖 [AI 챗봇] Azure OpenAI API 호출 중...")
-                            logger.info(f"🤖 [AI 챗봇] 모델: {DEPLOYMENT_NAME}")
-                        response = openai.chat.completions.create(
-                            model=str(DEPLOYMENT_NAME),
+                            logger.info(f"📝 [AI 챗봇] 하이브리드 프롬프트 생성 완료")
+                        
+                        # Azure OpenAI API 호출
+                        response = openai.ChatCompletion.create(
+                            deployment_id=DEPLOYMENT_NAME,
                             messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": prompt}
+                                {"role": "system", "content": hybrid_prompt},
+                                {"role": "user", "content": message}
                             ],
-                            temperature=0.3,  # 더 정확한 답변을 위해 낮춤
+                            temperature=ai_config["temperature"],
+                            max_tokens=ai_config["max_tokens"],
+                            top_p=ai_config["top_p"],
+                            frequency_penalty=ai_config["frequency_penalty"],
+                            presence_penalty=ai_config["presence_penalty"]
                         )
-                        if debug_logs:
-                            logger.info(f"🤖 [AI 챗봇] Azure OpenAI API 호출 완료")
                         
-                        ai_response = response.choices[0].message.content
                         if debug_logs:
-                            logger.info(f"🤖 [AI 챗봇] AI 응답 길이: {len(ai_response) if ai_response else 0} 문자")
+                            logger.info(f"✅ [AI 챗봇] Azure OpenAI API 응답 수신")
                         
-                        if ai_response:
-                            # 출처 정보 추가
-                            if debug_logs:
-                                logger.info(f"📄 [AI 챗봇] 출처 정보 추가 시작...")
-                            source_info = ""
-                            if combined_results:
-                                sources = set()
-                                question_numbers = []
-                                
-                                for chunk in combined_results:
-                                    metadata = chunk.get("metadata", {})
-                                    if metadata.get("type") == "extracted_question":
-                                        # 추출된 문제인 경우
-                                        sources.add("추출된 기출문제")
-                                        if metadata.get("question_number"):
-                                            question_numbers.append(metadata["question_number"])
-                                    elif metadata.get("pdf_source"):
-                                        # 벡터 DB 결과인 경우
-                                        sources.add(metadata["pdf_source"])
-                                
-                                if sources:
-                                    if len(sources) == 1:
-                                        source = list(sources)[0]
-                                        if source == "추출된 기출문제" and question_numbers:
-                                            # 추출된 문제의 경우 문제 번호도 표시
-                                            if len(question_numbers) == 1:
-                                                source_info = f"\n\n📄 **출처**: {source}, {question_numbers[0]}번 문제"
-                                            else:
-                                                question_str = ", ".join([f"{q}번" for q in question_numbers[:3]])  # 최대 3개만
-                                                source_info = f"\n\n📄 **출처**: {source}, {question_str} 문제"
-                                        else:
-                                            source_info = f"\n\n📄 **출처**: {source}"
-                                    else:
-                                        sources_list = "\n".join([f"- {source}" for source in sources])
-                                        source_info = f"\n\n📄 **출처**:\n{sources_list}"
+                        if response and response.choices:
+                            assistant_message = response.choices[0].message.content.strip()
                             
-                            final_response = ai_response + source_info
                             if debug_logs:
-                                logger.info(f"✅ [AI 챗봇] RAG 기반 답변 완료")
-                                logger.info(f"📝 [AI 챗봇] 최종 응답 길이: {len(final_response)} 문자")
-                                logger.info(f"📝 [AI 챗봇] 히스토리에 메시지 추가 시작...")
+                                logger.info(f"💬 [AI 챗봇] 생성된 답변: {assistant_message[:100]}...")
+                            
+                            # 히스토리에 메시지 추가
                             history.append({"role": "user", "content": message})
-                            history.append({"role": "assistant", "content": final_response})
+                            history.append({"role": "assistant", "content": assistant_message})
+                            
                             if debug_logs:
                                 logger.info(f"📝 [AI 챗봇] 히스토리에 메시지 추가 완료")
                         else:
@@ -2240,30 +2263,79 @@ def create_gradio_interface():
                     outputs=[wrong_state, wrong_question_output, wrong_progress, wrong_evaluation_output, wrong_stats]
                 )
         
-        # 시험 목록 동기화를 위한 함수들
-        def update_exam_list():
-            """시험 목록 업데이트"""
-            return gr.Dropdown(choices=generator.get_exam_list())
-        
-        def update_selected_exam():
-            """문제 풀이 탭의 시험 선택 업데이트"""
-            return gr.Dropdown(choices=generator.get_exam_list())
-        
-        # 시험 추가/제거/업로드 시 시험 목록 업데이트
+        # 시험 관리 탭의 이벤트 연결 (모든 컴포넌트 정의 이후)
         add_exam_btn.click(
-            fn=update_exam_list,
-            inputs=[],
-            outputs=exam_list
+            fn=generator.add_exam,
+            inputs=[exam_name_input],
+            outputs=[exam_action_output, exam_list]
         ).then(
             fn=update_selected_exam,
             inputs=[],
             outputs=selected_exam
         ).then(
-            fn=lambda: gr.Dropdown(choices=generator.get_exam_list()),
+            fn=lambda: gr.Dropdown(choices=generator.get_exam_list(), value=None),
             inputs=[],
             outputs=wrong_answer_exam
         ).then(
-            fn=lambda: gr.Dropdown(choices=generator.get_exam_list()),
+            fn=lambda: gr.Dropdown(choices=generator.get_exam_list(), value=None),
+            inputs=[],
+            outputs=chat_exam_select
+        )
+        
+        remove_exam_btn.click(
+            fn=generator.remove_exam,
+            inputs=[exam_list],
+            outputs=[exam_action_output, exam_list]
+        ).then(
+            fn=update_selected_exam,
+            inputs=[],
+            outputs=selected_exam
+        ).then(
+            fn=lambda: gr.Dropdown(choices=generator.get_exam_list(), value=None),
+            inputs=[],
+            outputs=wrong_answer_exam
+        ).then(
+            fn=lambda: gr.Dropdown(choices=generator.get_exam_list(), value=None),
+            inputs=[],
+            outputs=chat_exam_select
+        )
+        
+        clear_all_btn.click(
+            fn=generator.clear_all_data,
+            inputs=[],
+            outputs=[exam_action_output]
+        ).then(
+            fn=lambda: gr.Dropdown(choices=[]),
+            inputs=[],
+            outputs=[exam_list]
+        ).then(
+            fn=lambda: gr.Dropdown(choices=[], value=None),
+            inputs=[],
+            outputs=selected_exam
+        ).then(
+            fn=lambda: gr.Dropdown(choices=[], value=None),
+            inputs=[],
+            outputs=wrong_answer_exam
+        ).then(
+            fn=lambda: gr.Dropdown(choices=[], value=None),
+            inputs=[],
+            outputs=chat_exam_select
+        )
+        
+        upload_btn.click(
+            fn=generator.upload_pdf,
+            inputs=[pdf_upload, exam_name_input],
+            outputs=[upload_output, exam_list]
+        ).then(
+            fn=update_selected_exam,
+            inputs=[],
+            outputs=selected_exam
+        ).then(
+            fn=lambda: gr.Dropdown(choices=generator.get_exam_list(), value=None),
+            inputs=[],
+            outputs=wrong_answer_exam
+        ).then(
+            fn=lambda: gr.Dropdown(choices=generator.get_exam_list(), value=None),
             inputs=[],
             outputs=chat_exam_select
         )
@@ -2275,40 +2347,10 @@ def create_gradio_interface():
             outputs=[pdf_list_output]
         )
         
-        remove_exam_btn.click(
-            fn=update_exam_list,
-            inputs=[],
-            outputs=exam_list
-        ).then(
-            fn=update_selected_exam,
-            inputs=[],
-            outputs=selected_exam
-        ).then(
-            fn=lambda: gr.Dropdown(choices=generator.get_exam_list()),
-            inputs=[],
-            outputs=wrong_answer_exam
-        ).then(
-            fn=lambda: gr.Dropdown(choices=generator.get_exam_list()),
-            inputs=[],
-            outputs=chat_exam_select
-        )
-        
-        upload_btn.click(
-            fn=update_exam_list,
-            inputs=[],
-            outputs=exam_list
-        ).then(
-            fn=update_selected_exam,
-            inputs=[],
-            outputs=selected_exam
-        ).then(
-            fn=lambda: gr.Dropdown(choices=generator.get_exam_list()),
-            inputs=[],
-            outputs=wrong_answer_exam
-        ).then(
-            fn=lambda: gr.Dropdown(choices=generator.get_exam_list()),
-            inputs=[],
-            outputs=chat_exam_select
+        pdf_list_btn.click(
+            fn=generator.format_pdf_list,
+            inputs=[exam_list],
+            outputs=[pdf_list_output]
         )
         
         # 하단 정보
