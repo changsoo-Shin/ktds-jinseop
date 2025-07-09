@@ -106,13 +106,10 @@ class PDFProcessor:
             
             # 문제 추출 및 저장
             extracted_questions = self._extract_questions_from_text(full_text, subject, original_filename)
-            logger.info(f"📝 [문제 추출] {len(extracted_questions)}개의 문제 추출 완료 (최대한 많이)")
             
             # 추출된 문제를 TXT 파일로 저장
             if extracted_questions:
                 self._save_questions(extracted_questions, subject, original_filename)
-            else:
-                logger.warning("⚠️ 추출된 문제가 없어서 TXT 파일을 생성하지 않습니다.")
             
             # 텍스트 청크 분할 및 벡터화는 기존 로직 재사용
             text_chunks = self._extract_and_chunk_text_from_text(full_text, subject)
@@ -181,33 +178,12 @@ class PDFProcessor:
         
         # 1단계: 모든 가능한 문제 번호 위치 찾기
         potential_questions = []
-        logger.info(f"🔍 [문제 추출] 전체 라인 수: {len(lines)}개")
-        logger.info(f"🔍 [문제 추출] 처음 10라인 미리보기:")
-        for i, line in enumerate(lines[:10]):
-            logger.info(f"   라인 {i}: {line[:100]}")
         
         for line_idx, line in enumerate(lines):
             line = line.strip('\r')
             if not line:
                 continue
             
-            # 디버깅: 특정 문제 번호가 포함된 라인들을 집중 검사
-            contains_target_numbers = any(f" {i}." in line or f"- {i}." in line or f"{i}." in line[:10] for i in range(50, 80))
-            contains_any_number = any(str(i) in line for i in range(1, 1000))
-            
-            if line_idx < 20 or contains_target_numbers:
-                logger.info(f"🔍 라인 {line_idx} 검사: {line}")
-                
-                # 각 패턴을 개별적으로 테스트
-                for pattern_idx, pattern in enumerate(question_patterns):
-                    match = re.match(pattern, line)
-                    if match:
-                        detected_number = match.group(1)
-                        logger.info(f"   ✅ 패턴 {pattern_idx} 매칭 성공: {pattern}")
-                        logger.info(f"   📍 추출된 번호: {detected_number}")
-                    elif contains_target_numbers:
-                        logger.info(f"   ❌ 패턴 {pattern_idx} 매칭 실패: {pattern}")
-                
             for pattern_idx, pattern in enumerate(question_patterns):
                 match = re.match(pattern, line)
                 if match:
@@ -218,13 +194,7 @@ class PDFProcessor:
                             "number": int(detected_number),
                             "line": line
                         })
-                        logger.info(f"✅ 문제 발견: {detected_number}번 (라인 {line_idx}, 패턴 {pattern_idx}: {pattern})")
-                        logger.info(f"   전체 라인: {line}")
                         break
-        
-        logger.info(f"🔍 [1단계] 잠재 문제 {len(potential_questions)}개 발견")
-        if potential_questions:
-            logger.info(f"📋 발견된 문제 번호들: {[q['number'] for q in potential_questions]}")
         
         # 2단계: 중복 제거 및 번호순 정렬
         # 같은 번호의 중복 문제 제거 (가장 먼저 발견된 것만 유지)
@@ -235,14 +205,9 @@ class PDFProcessor:
             if potential_q["number"] not in seen_numbers:
                 verified_questions.append(potential_q)
                 seen_numbers.add(potential_q["number"])
-                logger.debug(f"✅ 문제 {potential_q['number']}번 추가")
-            else:
-                logger.debug(f"❌ 문제 {potential_q['number']}번 중복 제외")
         
         # 번호순으로 정렬
         verified_questions.sort(key=lambda x: x["number"])
-        
-        logger.info(f"🔍 [2단계] 연속성 검증 후 문제 {len(verified_questions)}개 확정")
         
         # 3단계: 검증된 문제들 사이의 텍스트 추출
         questions = []
@@ -270,10 +235,8 @@ class PDFProcessor:
                     "start_line": start_line_idx,
                     "end_line": end_line_idx
                 })
-                logger.debug(f"📝 문제 {verified_q['number']}번 추출: {len(question_text)} 문자")
         
-        logger.info(f"📝 [3단계] 최종 문제 추출 완료: {len(questions)}개")
-        logger.info(f"📋 [추출된 문제 번호]: {[q['number'] for q in questions]}")
+        logger.info(f"📝 문제 추출 완료: {len(questions)}개")
         
         return questions
     
@@ -371,25 +334,21 @@ class PDFProcessor:
                         "end_line": 0
                     })
             
-            logger.info(f"🤖 [AI 문제 추출] {len(questions)}개 문제 추출 완료")
             return questions
             
         except Exception as e:
-            logger.error(f"❌ [AI 문제 추출] 오류: {e}")
+            logger.error(f"❌ AI 문제 추출 오류: {e}")
             return []
     
     def _save_questions(self, questions: List[Dict[str, Any]], subject: str, original_filename: str = None):
         """추출된 문제를 txt 파일로만 저장"""
         try:
-            logger.info(f"💾 [문제 저장] {len(questions)}개 문제 저장 시작...")
-            
             # 파일명 생성
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_filename = (original_filename or "").replace('.pdf', '') if original_filename else f"{subject}_{timestamp}"
             
             # TXT 파일만 저장
             txt_file = self.questions_dir / f"{base_filename}_questions.txt"
-            logger.info(f"📄 [문제 저장] 저장할 파일: {txt_file}")
             
             with open(txt_file, 'w', encoding='utf-8') as f:
                 f.write(f"# {subject} 기출문제\n")
@@ -401,14 +360,10 @@ class PDFProcessor:
                     f.write(f"=== 문제 {question['number']} ===\n")
                     f.write(f"{question['text']}\n\n")
             
-            logger.info(f"✅ 문제 저장 완료:")
-            logger.info(f"   📄 TXT: {txt_file}")
-            logger.info(f"   📊 저장된 문제 수: {len(questions)}개")
+            logger.info(f"✅ 문제 저장: {len(questions)}개 → {txt_file.name}")
             
         except Exception as e:
             logger.error(f"❌ 문제 저장 중 오류: {e}")
-            import traceback
-            logger.error(f"❌ 상세 오류: {traceback.format_exc()}")
     
     def _extract_and_chunk_text_from_text(self, full_text: str, subject: str) -> List[Dict[str, Any]]:
         """텍스트(문자열)에서 청크 분할"""
@@ -514,8 +469,7 @@ class PDFProcessor:
             texts = [chunk["text"] for chunk in chunks]
             
             # 벡터화
-            logger.info("🔄 텍스트 벡터화 중...")
-            embeddings = self.embedding_model.encode(texts, show_progress_bar=True)
+            embeddings = self.embedding_model.encode(texts, show_progress_bar=False)
             
             # FAISS 인덱스에 추가
             self.index.add(embeddings.astype('float32'))
@@ -663,7 +617,6 @@ class PDFProcessor:
         try:
             # 모든 TXT 파일 검색 (더 유연한 매칭)
             all_txt_files = list(self.questions_dir.glob("*_questions.txt"))
-            logger.info(f"🔍 [파일 검색] 전체 TXT 파일: {[f.name for f in all_txt_files]}")
             
             # 과목명 매칭 (공백 제거하여 비교)
             subject_clean = subject.replace(" ", "").replace("　", "")  # 공백과 전각공백 제거
@@ -673,17 +626,11 @@ class PDFProcessor:
                 filename_clean = txt_file.name.replace(" ", "").replace("　", "")  # 공백 제거
                 if subject_clean in filename_clean or subject in txt_file.name:
                     matching_files.append(txt_file)
-                    logger.info(f"✅ [파일 매칭] {txt_file.name} - 매칭됨")
-                else:
-                    logger.debug(f"❌ [파일 매칭] {txt_file.name} - 매칭 안됨")
-            
-            logger.info(f"🔍 [파일 검색] {subject}와 매칭된 파일: {len(matching_files)}개")
             
             for txt_file in matching_files:
                 try:
                     txt_questions = self._parse_questions_from_txt(txt_file, subject)
                     questions.extend(txt_questions)
-                    logger.info(f"📄 [파일 로드] {txt_file.name}에서 {len(txt_questions)}개 문제 로드")
                 except Exception as e:
                     logger.warning(f"⚠️ TXT 파일 읽기 오류 ({txt_file}): {e}")
                     continue
@@ -691,7 +638,8 @@ class PDFProcessor:
             # 문제 번호 순으로 정렬
             questions.sort(key=lambda x: int(x.get("number", 0)) if x.get("number", "0").isdigit() else 0)
             
-            logger.info(f"✅ {subject} 시험의 추출된 문제 {len(questions)}개 로드 완료 (TXT 파일만 사용)")
+            if questions:
+                logger.info(f"✅ {subject}: {len(questions)}개 문제 로드")
             return questions
             
         except Exception as e:
@@ -703,67 +651,45 @@ class PDFProcessor:
         questions = []
         
         try:
-            logger.info(f"🔍 [TXT 파싱] 파일 읽기 시작: {txt_file.name}")
             with open(txt_file, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
-            logger.info(f"🔍 [TXT 파싱] 파일 크기: {len(content)} 문자")
-            logger.info(f"🔍 [TXT 파싱] 파일 내용 미리보기 (처음 500자):")
-            logger.info(content[:500])
             
             # 파일에서 출처 정보 추출
             source_file = "unknown"
             extraction_date = ""
             
             lines = content.split('\n')
-            logger.info(f"🔍 [TXT 파싱] 전체 라인 수: {len(lines)}개")
             
             for line in lines:
                 if line.startswith('# 출처:'):
                     source_file = line.replace('# 출처:', '').strip()
-                    logger.info(f"📄 [TXT 파싱] 출처 정보: {source_file}")
                 elif line.startswith('# 추출일:'):
                     extraction_date = line.replace('# 추출일:', '').strip()
-                    logger.info(f"📅 [TXT 파싱] 추출일: {extraction_date}")
             
             # 문제 섹션 분리
             question_sections = content.split('=== 문제 ')
-            logger.info(f"🔍 [TXT 파싱] '=== 문제 '로 분리한 섹션 수: {len(question_sections)}개")
-            
-            for i, section in enumerate(question_sections):
-                logger.info(f"🔍 [TXT 파싱] 섹션 {i}: {len(section)} 문자")
-                if i > 0:  # 첫 번째 섹션은 헤더
-                    logger.info(f"   섹션 {i} 내용 미리보기: {section[:100]}...")
             
             for section_idx, section in enumerate(question_sections[1:], 1):  # 첫 번째는 헤더이므로 제외
-                logger.info(f"🔍 [TXT 파싱] 섹션 {section_idx} 처리 중...")
                 lines = section.split('\n')
                 if not lines:
-                    logger.warning(f"⚠️ [TXT 파싱] 섹션 {section_idx}: 빈 섹션")
                     continue
                 
                 # 문제 번호 추출
                 first_line = lines[0].strip()
-                logger.info(f"🔍 [TXT 파싱] 섹션 {section_idx} 첫 라인: '{first_line}'")
                 
                 if not first_line:
-                    logger.warning(f"⚠️ [TXT 파싱] 섹션 {section_idx}: 첫 라인이 비어있음")
                     continue
                     
                 # === 제거 후 숫자 확인
                 clean_line = first_line.replace('=', '').strip()
-                logger.info(f"🔍 [TXT 파싱] 섹션 {section_idx} === 제거 후: '{clean_line}'")
                 
                 if not clean_line.isdigit():
-                    logger.warning(f"⚠️ [TXT 파싱] 섹션 {section_idx}: 문제 번호가 숫자가 아님: '{clean_line}'")
                     continue
                 
                 section_number = clean_line
-                logger.info(f"✅ [TXT 파싱] 섹션 {section_idx}: 문제 번호 '{section_number}' 추출")
                 
                 # 문제 내용 추출 (문제 번호 라인 제외)
                 section_content = '\n'.join(lines[1:]).strip()
-                logger.info(f"🔍 [TXT 파싱] 섹션 {section_idx}: 내용 길이 {len(section_content)} 문자")
                 
                 # TXT 파일에서는 각 섹션이 이미 완전한 문제이므로 그대로 사용
                 if section_content:
@@ -775,17 +701,12 @@ class PDFProcessor:
                         "start_line": 0,
                         "end_line": 0
                     })
-                    logger.info(f"✅ [TXT 파싱] 문제 {section_number}번 성공적으로 로드: {len(section_content)} 문자")
-                else:
-                    logger.warning(f"⚠️ [TXT 파싱] 섹션 {section_idx}: 내용이 비어있음")
             
-            logger.info(f"📄 TXT 파일에서 {len(questions)}개 문제 파싱 완료: {txt_file.name}")
+            logger.info(f"📄 {txt_file.name}: {len(questions)}개 문제 로드")
             return questions
             
         except Exception as e:
             logger.error(f"❌ TXT 파일 파싱 실패 {txt_file}: {e}")
-            import traceback
-            logger.error(f"❌ 상세 오류: {traceback.format_exc()}")
             return []
     
     def _extract_individual_questions_from_section(self, section_content: str, section_number: str, 
@@ -820,11 +741,7 @@ class PDFProcessor:
                     # 연도가 아닌 문제 번호인지 확인 (1-1000 범위로 확장)
                     if detected_number.isdigit() and 1 <= int(detected_number) <= 1000:
                         is_question_start = True
-                        logger.debug(f"✅ 문제 시작 감지: {line[:50]}... (패턴: {pattern})")
                         break
-            
-            if not is_question_start and line.startswith(('38.', '39.', '40.', '41.', '42.')):
-                logger.debug(f"🔍 패턴 미매칭 라인: {line[:50]}...")
             
             if is_question_start:
                 # 이전 문제 저장
@@ -839,7 +756,6 @@ class PDFProcessor:
                             "start_line": 0,
                             "end_line": 0
                         })
-                        logger.debug(f"✅ 문제 {current_question_number} 추출: {len(question_text)} 문자")
                 
                 # 새 문제 시작
                 current_question = True
@@ -862,7 +778,6 @@ class PDFProcessor:
                     "start_line": 0,
                     "end_line": 0
                 })
-                logger.debug(f"✅ 마지막 문제 {current_question_number} 추출: {len(question_text)} 문자")
         
         return questions
     
@@ -961,7 +876,6 @@ class PDFProcessor:
                     "score": result["score"]
                 })
             
-            logger.info(f"✅ 추출된 문제 semantic 검색 완료: {len(results)}개 결과")
             return results
             
         except Exception as e:
