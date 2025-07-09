@@ -2365,7 +2365,23 @@ def create_gradio_interface():
     return demo
 
 if __name__ == "__main__":
-    print("🎯 [콘솔 로그] 정보시스템감리사 문제 생성 챗봇 시작")
-    print("🌐 [콘솔 로그] Gradio 웹 인터페이스 실행 중...")
+    # 로깅 설정
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    
+    # Azure App Service용 포트 설정
+    import os
+    port = int(os.environ.get("PORT", 7860))
+    
+    logger.info("🎯 [콘솔 로그] 정보시스템감리사 문제 생성 챗봇 시작")
+    logger.info("🌐 [콘솔 로그] Gradio 웹 인터페이스 실행 중...")
+    
+    # Azure App Service에서 외부 접속 허용
     demo = create_gradio_interface()
-    demo.launch(share=False, debug=True, show_error=True)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=port,
+        share=False,
+        show_error=True,
+        debug=False
+    )
