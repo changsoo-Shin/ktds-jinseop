@@ -53,7 +53,7 @@ class ExamQuestionGenerator:
         self.current_answer = None
         self.current_explanation = None
         self.current_context = None
-        self.current_metadata = None  # 검색된 문제의 메타데이터
+        self.current_metadata = None  # 검색된 문제의 메타데이터 
         self.question_mode = "generate"  # "generate" 또는 "exact"
         self.current_exam_name = None  # 현재 선택된 시험 이름
         
@@ -234,7 +234,7 @@ class ExamQuestionGenerator:
         if exam_name not in self.pdf_hashes:
             return False
         
-        # 파일명과 해시 모두 체크
+        # 파일명과 해시 체크
         for stored_filename, stored_hash in self.pdf_hashes[exam_name].items():
             if stored_filename == filename or stored_hash == pdf_hash:
                 return True
@@ -2435,4 +2435,5 @@ if __name__ == "__main__":
                 ngrok.disconnect(ngrok_url)
                 logger.info("🔗 [ngrok] 터널 연결 해제 완료")
             except:
+
                 pass
